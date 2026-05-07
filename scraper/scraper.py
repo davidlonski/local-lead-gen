@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Local Lead Gen Scraper
-Uses Playwright to scrape local business leads
+Uses Playwright to scrape Google Maps for businesses without websites
 """
 
 import json
@@ -10,52 +10,76 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 
 async def scrape_leads(niche, location="Rochester, NY", max_results=10):
     """
-    Scrape leads for a given niche and location
-    
-    Args:
-        niche: Type of business (restaurant, salon, contractor)
-        location: City/location to search
-        max_results: Maximum number of results to return
-    
-    Returns:
-        List of lead dictionaries with name, address, phone
+    Scrape leads from Google Maps for a given niche and location
     """
     leads = []
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        )
+        page = await context.new_page()
         
-        # Construct search query based on niche
+        # Google Maps search
         search_query = f"{niche} in {location}"
-        search_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
+        maps_url = f"https://www.google.com/maps/search/{search_query.replace(' ', '+')}"
         
         try:
-            await page.goto(search_url, timeout=30000)
-            await page.wait_for_timeout(3000)  # Wait for results to load
+            print(f"Searching: {search_query}")
+            await page.goto(maps_url, timeout=30000)
+            await page.wait_for_timeout(5000)  # Wait for results
             
-            # Extract business information from Google search results
-            # This is a simplified version - in production, use Google Maps API or similar
-            business_elements = await page.query_selector_all("div.VkpGBb")
+            # Scroll to load more results
+            for _ in range(3):
+                await page.keyboard.press("End")
+                await page.wait_for_timeout(2000)
             
-            for idx, element in enumerate(business_elements[:max_results]):
+            # Extract business cards
+            # Google Maps business results
+            business_cards = await page.query_selector_all("div.Nv2PK")
+            
+            print(f"Found {len(business_cards)} business cards")
+            
+            for idx, card in enumerate(business_cards[:max_results]):
                 try:
-                    name_elem = await element.query_selector("div.qBF1Pd")
-                    name = await name_elem.inner_text() if name_elem else f"Business {idx + 1}"
+                    # Name
+                    name_elem = await card.query_selector("div.qBF1Pd")
+                    name = await name_elem.inner_text() if name_elem else f"Business {idx+1}"
                     
-                    address_elem = await element.query_selector("div.W4Efsd span")
-                    address = await address_elem.inner_text() if address_elem else "Address not found"
+                    # Get all text content
+                    card_text = await card.inner_text()
                     
-                    phone_elem = await element.query_selector("span.LrzXr")
-                    phone = await phone_elem.inner_text() if phone_elem else "Phone not found"
+                    # Try to find address (usually in the card)
+                    address = "Address not found"
+                    phone = "Phone not found"
+                    
+                    # Simple extraction - look for phone pattern
+                    import re
+                    phone_match = re.search(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', card_text)
+                    if phone_match:
+                        phone = phone_match.group()
+                    
+                    # Check if they have a website (we want ones WITHOUT)
+                    website_elem = await card.query_selector("a[href*='http']")
+                    has_website = website_elem is not None
+                    
+                    if has_website:
+                        # Check if it's a real website or just Google Maps link
+                        href = await website_elem.get_attribute("href")
+                        if href and 'google.com' not in href and 'maps' not in href:
+                            print(f"Skipping {name} - has website: {href[:50]}")
+                            continue
                     
                     leads.append({
                         "name": name.strip(),
                         "address": address.strip(),
                         "phone": phone.strip(),
                         "niche": niche,
-                        "status": "new"
+                        "status": "new",
+                        "site_url": ""
                     })
+                    
                 except Exception as e:
                     print(f"Error extracting business {idx}: {e}")
                     continue
@@ -81,15 +105,6 @@ def save_leads(leads):
     """Save leads to leads.json"""
     with open("/Users/Fredrick/Desktop/local-lead-gen/leads.json", "w") as f:
         json.dump(leads, f, indent=2)
-
-def get_new_leads():
-    """Get only new leads that haven't been processed"""
-    existing = load_existing_leads()
-    processed_names = {lead["name"] for lead in existing if lead.get("status") != "new"}
-    
-    # In a real scenario, you'd scrape fresh leads and compare
-    # For now, return existing new leads
-    return [lead for lead in existing if lead.get("status") == "new"]
 
 if __name__ == "__main__":
     import sys
