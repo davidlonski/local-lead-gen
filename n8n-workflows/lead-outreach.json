@@ -1,0 +1,149 @@
+{
+  "name": "Lead Outreach - Weekly Site Built",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (Every Monday 9AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "databaseId": "LEADS_DB_ID_PLACEHOLDER",
+        "filter": {
+          "property": "Status",
+          "select": {
+            "equals": "site_built"
+          }
+        },
+        "options": {}
+      },
+      "id": "notion-list-leads",
+      "name": "Notion - List Site Built Leads",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-credentials",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-leads",
+      "name": "Split Leads (Loop)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7891/api/n8n/trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"lead_name\": \"{{$json.name}}\",\n  \"lead_address\": \"{{$json.address}}\",\n  \"lead_phone\": \"{{$json.phone}}\",\n  \"site_url\": \"{{$json.site_url}}\",\n  \"lead_id\": \"{{$json.id}}\"\n}",
+        "options": {}
+      },
+      "id": "webhook-openclaw",
+      "name": "POST to OpenClaw Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "id": "wait-delay",
+      "name": "Wait 2 Minutes (Rate Limit)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Every Monday 9AM)": {
+      "main": [
+        [
+          {
+            "node": "Notion - List Site Built Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion - List Site Built Leads": {
+      "main": [
+        [
+          {
+            "node": "Split Leads (Loop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Leads (Loop)": {
+      "main": [
+        [
+          {
+            "node": "POST to OpenClaw Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to OpenClaw Webhook": {
+      "main": [
+        [
+          {
+            "node": "Wait 2 Minutes (Rate Limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2 Minutes (Rate Limit)": {
+      "main": [
+        [
+          {
+            "node": "Split Leads (Loop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    "lead-gen",
+    "outreach",
+    "notion"
+  ]
+}

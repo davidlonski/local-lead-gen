@@ -1,0 +1,149 @@
+{
+  "name": "Fredrick Response Handler - Generate & Send Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fredrick-response-handler",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Receive Lead Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "fredrick-response-handler"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:18789/api/agent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"Generate outreach email for lead: {{$json.lead_name}} at {{$json.site_url}}. Phone: {{$json.lead_phone}}, Address: {{$json.lead_address}}\"\n}",
+        "options": {}
+      },
+      "id": "openclaw-agent",
+      "name": "OpenClaw - Generate Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "davelonski12@gmail.com",
+        "toEmail": "={{$json.lead_email}}",
+        "subject": "=Website Ready for {{$json.lead_name}}",
+        "emailType": "html",
+        "message": "={{$node[\"OpenClaw - Generate Email\"].json[\"response\"]}}",
+        "options": {}
+      },
+      "id": "gmail-send",
+      "name": "Gmail - Send Outreach Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-credentials",
+          "name": "Gmail OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "databaseId": "LEADS_DB_ID_PLACEHOLDER",
+        "pageId": "={{$json.lead_id}}",
+        "properties": {
+          "Status": {
+            "select": {
+              "name": "outreached"
+            }
+          }
+        },
+        "options": {}
+      },
+      "id": "notion-update-status",
+      "name": "Notion - Update Status to Outreached",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-credentials",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Email sent to {{$json.lead_name}} and status updated to outreached\"\n}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Receive Lead Data": {
+      "main": [
+        [
+          {
+            "node": "OpenClaw - Generate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenClaw - Generate Email": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Outreach Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Send Outreach Email": {
+      "main": [
+        [
+          {
+            "node": "Notion - Update Status to Outreached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion - Update Status to Outreached": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    "lead-gen",
+    "email",
+    "response-handler"
+  ]
+}
